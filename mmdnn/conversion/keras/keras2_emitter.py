@@ -520,22 +520,24 @@ def convolution(weights_dict, name, input, group, conv_type, filters=None, **kwa
         layer = keras.applications.mobilenet.DepthwiseConv2D(name=name, **kwargs)(input)
         return layer
 
-    grouped_channels = int(filters / group)
-    group_list = []
-
     if group == 1:
         func = getattr(layers, conv_type.split('.')[-1])
         layer = func(name = name, filters = filters, **kwargs)(input)
         return layer
+
+    # FIXME: waiting for official bug fix
+    in_grouped_channels = int(input._keras_shape[-1] / group)
+    out_grouped_channels = int(filters / group)
 
     weight_groups = list()
     if not weights_dict == None:
         w = np.array(weights_dict[name]['weights'])
         weight_groups = np.split(w, indices_or_sections=group, axis=-1)
 
+    group_list = []
     for c in range(group):
-        x = layers.Lambda(lambda z: z[:, :, :, c * grouped_channels:(c + 1) * grouped_channels])(input)
-        x = layers.Conv2D(name=name + "_" + str(c), filters=grouped_channels, **kwargs)(x)
+        x = layers.Lambda(lambda z: z[:, :, :, c * in_grouped_channels:(c + 1) * in_grouped_channels])(input)
+        x = layers.Conv2D(name=name + "_" + str(c), filters=out_grouped_channels, **kwargs)(x)
         weights_dict[name + "_" + str(c)] = dict()
         weights_dict[name + "_" + str(c)]['weights'] = weight_groups[c]
 
@@ -545,5 +547,6 @@ def convolution(weights_dict, name, input, group, conv_type, filters=None, **kwa
 
     if 'bias' in weights_dict[name]:
         b = K.variable(weights_dict[name]['bias'], name = name + "_bias")
-        layer = layer + b
+        # FIXME: waiting for official bug fix
+        layer = layers.Lambda(lambda l: l + b)(layer)
     return layer""")
