@@ -525,7 +525,7 @@ def convolution(weights_dict, name, input, group, conv_type, filters=None, **kwa
         layer = func(name = name, filters = filters, **kwargs)(input)
         return layer
 
-    # FIXME: waiting for official bug fix
+    # group input and output channels
     in_grouped_channels = int(input._keras_shape[-1] / group)
     out_grouped_channels = int(filters / group)
 
@@ -534,19 +534,33 @@ def convolution(weights_dict, name, input, group, conv_type, filters=None, **kwa
         w = np.array(weights_dict[name]['weights'])
         weight_groups = np.split(w, indices_or_sections=group, axis=-1)
 
+        if 'bias' in weights_dict[name]:
+            b =  np.array(weights_dict[name]['bias'])
+            bias_groups = np.split(b, indices_or_sections=group, axis=-1)
+
     group_list = []
     for c in range(group):
+        name_c = name + "_" + str(c)
+
         x = layers.Lambda(lambda z: z[:, :, :, c * in_grouped_channels:(c + 1) * in_grouped_channels])(input)
-        x = layers.Conv2D(name=name + "_" + str(c), filters=out_grouped_channels, **kwargs)(x)
-        weights_dict[name + "_" + str(c)] = dict()
-        weights_dict[name + "_" + str(c)]['weights'] = weight_groups[c]
+        x = layers.Conv2D(name=name_c, filters=out_grouped_channels, **kwargs)(x)
+
+        weights_dict[name_c] = dict()
+        weights_dict[name_c]['weights'] = weight_groups[c]
+
+        if 'bias' in weights_dict[name]:
+            # FIXME workaround: split bias weights
+            weights_dict[name_c]['bias'] = bias_groups[c]
 
         group_list.append(x)
+    # added name to concatenation layer
+    layer = layers.concatenate(group_list, axis=-1, name=name + "_concat_group")
 
-    layer = layers.concatenate(group_list, axis = -1)
+    # buggy implementation
+    # it should use keras wrapper (lambda) and the weights are not initialized
+    # correctly, because there is no layer named with the 'name' argument
+    #if 'bias' in weights_dict[name]:
+    #    b = K.variable(weights_dict[name]['bias'], name = name + "_bias")
+    #    layer = layer + b
 
-    if 'bias' in weights_dict[name]:
-        b = K.variable(weights_dict[name]['bias'], name = name + "_bias")
-        # FIXME: waiting for official bug fix
-        layer = layers.Lambda(lambda l: l + b)(layer)
     return layer""")
