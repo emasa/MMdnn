@@ -525,42 +525,31 @@ def convolution(weights_dict, name, input, group, conv_type, filters=None, **kwa
         layer = func(name = name, filters = filters, **kwargs)(input)
         return layer
 
-    # group input and output channels
-    in_grouped_channels = int(input._keras_shape[-1] / group)
-    out_grouped_channels = int(filters / group)
-
     weight_groups = list()
     if not weights_dict == None:
         w = np.array(weights_dict[name]['weights'])
         weight_groups = np.split(w, indices_or_sections=group, axis=-1)
 
-        if 'bias' in weights_dict[name]:
-            b =  np.array(weights_dict[name]['bias'])
-            bias_groups = np.split(b, indices_or_sections=group, axis=-1)
+    weights = []
 
-    group_list = []
-    for c in range(group):
-        name_c = name + "_" + str(c)
+    for c_i in range(group):
+      weights_g = []
+      weights_c = weight_groups[c_i]
+      weights_zero = np.zeros_like(weights_c)
 
-        x = layers.Lambda(lambda z: z[:, :, :, c * in_grouped_channels:(c + 1) * in_grouped_channels])(input)
-        x = layers.Conv2D(name=name_c, filters=out_grouped_channels, **kwargs)(x)
+      for c_j in range(group):
+          if c_i == c_j:
+              weights_g.append(weights_c)
+          else:
+              weights_g.append(weights_zero)
 
-        weights_dict[name_c] = dict()
-        weights_dict[name_c]['weights'] = weight_groups[c]
+      weights_g = np.concatenate(weights_g, axis=-2)
+      weights.append(weights_g)
 
-        if 'bias' in weights_dict[name]:
-            # FIXME workaround: split bias weights
-            weights_dict[name_c]['bias'] = bias_groups[c]
+    weights = np.concatenate(weights, axis=-1)
+    weights_dict[name]['weights'] = weights
 
-        group_list.append(x)
-    # added name to concatenation layer
-    layer = layers.concatenate(group_list, axis=-1, name=name + "_concat_group")
-
-    # buggy implementation
-    # it should use keras wrapper (lambda) and the weights are not initialized
-    # correctly, because there is no layer named with the 'name' argument
-    #if 'bias' in weights_dict[name]:
-    #    b = K.variable(weights_dict[name]['bias'], name = name + "_bias")
-    #    layer = layer + b
+    func = getattr(layers, conv_type.split('.')[-1])
+    layer = func(name = name, filters = filters, **kwargs)(input)
 
     return layer""")
